@@ -2,14 +2,18 @@
 
 ## Project
 
-A specialty-filterable directory of every licensed mortgage broker in Canada. Differentiator: filter by specialty (halal, newcomer, self-employed, B-lender, private, languages) — not just geography. Standalone business; monetized via Featured Broker subscriptions, pay-per-lead routing, and lender affiliate revenue. Built by one person (me) in evenings/weekends.
+A specialty-filterable directory of every licensed mortgage broker in Canada. Differentiator: filter by specialty (halal, newcomer, self-employed, B-lender, private, languages) — not just geography.
+
+**Standalone directory business. Monetization is direct: Featured Broker subscriptions, pay-per-lead routing, lender affiliate revenue. No SaaS upsell.**
+
+Built by one person (me) in evenings/weekends.
 
 ## Stack
 
 - **Python 3.12** strict typed, `uv` for package management
 - **Postgres** via Supabase, **SQLModel** (Pydantic v2 + SQLAlchemy 2.x), **Alembic** for migrations
 - **Playwright** for JS-rendered registry scraping
-- **Crawl4AI** for broker website verification + content extraction
+- **httpx + selectolax + markdownify** for plain-HTTP website fetching, parsing, and markdown conversion (Crawl4AI dropped — see ADR 0002)
 - **Outscraper** for Google Maps enrichment
 - **Anthropic Python SDK** (Sonnet 4.6, Batch API + prompt caching) for specialty classification
 - **Polars** for data cleaning, **rapidfuzz** for fuzzy matching, **phonenumbers** for E.164 normalization

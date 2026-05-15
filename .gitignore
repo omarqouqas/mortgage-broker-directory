@@ -9,8 +9,13 @@ __pycache__/
 .env
 .env.local
 
-# Data (raw scraped data shouldn't be in git)
-data/
+# Data (scraper outputs are regenerable; large JSON dumps stay out of git)
+data/raw/**/*.json
+data/clean/
+data/verified/
+# Territories are hand-entered — keep that one CSV committed (see docs/compliance/territories.md).
+!data/raw/territories/
+!data/raw/territories/manual.csv
 
 # OS
 .DS_Store
