@@ -4,6 +4,7 @@ Skipped unless `.env.local` exists at the repo root — the user is expected to
 `cp .env.example .env.local` and run `supabase start` before invoking this.
 The config validator separately enforces that the DB URL is local-only.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

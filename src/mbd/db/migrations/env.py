@@ -4,6 +4,7 @@ Imports the models module so SQLModel.metadata is fully populated before
 autogenerate runs. Pulls the DB URL from Pydantic Settings (which itself
 refuses non-local URLs).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +17,9 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 from mbd.config import get_settings
-from mbd.db import models  # noqa: F401 -- side-effect: registers tables on metadata
+from mbd.db import (
+    models,  # noqa: F401  # pyright: ignore[reportUnusedImport]  # Side-effect: populates SQLModel.metadata for Alembic autogenerate
+)
 
 config = context.config
 if config.config_file_name is not None:

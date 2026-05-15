@@ -8,16 +8,26 @@ ways recorded in `docs/decisions/0001-initial-scope-clarifications.md`:
 - `is_active` + `updated_at` on brokerages, brokers, AND broker_licenses (independent lifecycles)
 - `scrape_runs.diff_summary JSONB` added — per-run audit trail in lieu of a history table
 - Screenshot/Storage columns omitted — moved to Step 5
+- FKs use `ondelete=RESTRICT` (not SET NULL) — soft-delete via `is_active` is the canonical
+  path; hard DELETEs are blocked to prevent silent orphans. FK columns are NOT NULL.
+- `updated_at` is maintained by a Postgres `BEFORE UPDATE` trigger (`set_updated_at()`)
+  installed by the initial migration. The ORM `onupdate=func.now()` hook is kept as a
+  belt-and-suspenders fallback; both are intentional. Raw SQL UPDATEs go through the trigger.
 """
+
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
-from typing import Any
+from datetime import UTC, date, datetime
+from typing import Any, ClassVar
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 from sqlmodel import Field, SQLModel
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 def _pk_uuid_col() -> sa.Column[Any]:
@@ -33,10 +43,11 @@ def _created_at_col() -> sa.Column[Any]:
 
 
 def _updated_at_col() -> sa.Column[Any]:
-    """`updated_at` is maintained by SQLAlchemy (ORM-level `onupdate`).
+    """Maintained by a Postgres BEFORE UPDATE trigger (`set_updated_at()`).
 
-    Raw SQL UPDATEs bypass this. If we ever need bulk SQL updates to bump this
-    column, switch to a Postgres trigger via an Alembic migration.
+    The `onupdate=func.now()` ORM hook here is a belt-and-suspenders fallback;
+    the trigger is the source of truth and catches raw SQL UPDATEs (bulk upserts,
+    Alembic data migrations, Polars-driven cleaning passes).
     """
     return sa.Column(
         sa.DateTime(timezone=True),
@@ -55,7 +66,18 @@ def _is_active_col() -> sa.Column[Any]:
 
 
 class Brokerage(SQLModel, table=True):
-    __tablename__ = "brokerages"
+    __tablename__: ClassVar[str] = "brokerages"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel parent declares this as declared_attr[Unknown]; concrete str override is intentional
+    __table_args__ = (
+        sa.Index("ix_brokerages_is_active", "is_active"),
+        sa.Index("ix_brokerages_website_status", "website_status"),
+        sa.Index("ix_brokerages_primary_province", "primary_province"),
+        sa.Index("ix_brokerages_google_place_id", "google_place_id"),
+        sa.Index(
+            "ix_brokerages_legal_name_primary_province",
+            "legal_name",
+            "primary_province",
+        ),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=_pk_uuid_col())
 
@@ -91,12 +113,17 @@ class Brokerage(SQLModel, table=True):
     )
 
     is_active: bool = Field(default=True, sa_column=_is_active_col())
-    scraped_at: datetime = Field(default_factory=datetime.utcnow, sa_column=_created_at_col())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=_updated_at_col())
+    scraped_at: datetime = Field(default_factory=_utcnow, sa_column=_created_at_col())
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_updated_at_col())
 
 
 class Broker(SQLModel, table=True):
-    __tablename__ = "brokers"
+    __tablename__: ClassVar[str] = "brokers"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel parent declares this as declared_attr[Unknown]; concrete str override is intentional
+    __table_args__ = (
+        sa.Index("ix_brokers_is_active", "is_active"),
+        sa.Index("ix_brokers_primary_brokerage_id", "primary_brokerage_id"),
+        sa.Index("ix_brokers_canonical_name", "canonical_name"),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=_pk_uuid_col())
 
@@ -106,32 +133,36 @@ class Broker(SQLModel, table=True):
         default_factory=list,
         sa_column=sa.Column(pg.ARRAY(sa.Text), nullable=False, server_default="{}"),
     )
-    primary_brokerage_id: uuid.UUID | None = Field(
-        default=None,
+    primary_brokerage_id: uuid.UUID = Field(
         sa_column=sa.Column(
             pg.UUID(as_uuid=True),
-            sa.ForeignKey("brokerages.id", ondelete="SET NULL"),
-            nullable=True,
+            sa.ForeignKey("brokerages.id", ondelete="RESTRICT"),
+            nullable=False,
         ),
     )
 
     is_active: bool = Field(default=True, sa_column=_is_active_col())
-    scraped_at: datetime = Field(default_factory=datetime.utcnow, sa_column=_created_at_col())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=_updated_at_col())
+    scraped_at: datetime = Field(default_factory=_utcnow, sa_column=_created_at_col())
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_updated_at_col())
 
 
 class BrokerLicense(SQLModel, table=True):
-    __tablename__ = "broker_licenses"
-    __table_args__ = (sa.UniqueConstraint("province", "license_number"),)
+    __tablename__: ClassVar[str] = "broker_licenses"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel parent declares this as declared_attr[Unknown]; concrete str override is intentional
+    __table_args__ = (
+        sa.UniqueConstraint("province", "license_number"),
+        sa.Index("ix_broker_licenses_is_active", "is_active"),
+        sa.Index("ix_broker_licenses_broker_id", "broker_id"),
+        sa.Index("ix_broker_licenses_license_status", "license_status"),
+        sa.Index("ix_broker_licenses_license_expiry_date", "license_expiry_date"),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=_pk_uuid_col())
 
-    broker_id: uuid.UUID | None = Field(
-        default=None,
+    broker_id: uuid.UUID = Field(
         sa_column=sa.Column(
             pg.UUID(as_uuid=True),
-            sa.ForeignKey("brokers.id", ondelete="SET NULL"),
-            nullable=True,
+            sa.ForeignKey("brokers.id", ondelete="RESTRICT"),
+            nullable=False,
         ),
     )
     province: str = Field(sa_column=sa.Column(sa.Text, nullable=False))
@@ -152,12 +183,19 @@ class BrokerLicense(SQLModel, table=True):
     )
 
     is_active: bool = Field(default=True, sa_column=_is_active_col())
-    scraped_at: datetime = Field(default_factory=datetime.utcnow, sa_column=_created_at_col())
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_column=_updated_at_col())
+    scraped_at: datetime = Field(default_factory=_utcnow, sa_column=_created_at_col())
+    updated_at: datetime = Field(default_factory=_utcnow, sa_column=_updated_at_col())
 
 
 class ScrapeRun(SQLModel, table=True):
-    __tablename__ = "scrape_runs"
+    __tablename__: ClassVar[str] = "scrape_runs"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel parent declares this as declared_attr[Unknown]; concrete str override is intentional
+    __table_args__ = (
+        sa.Index(
+            "ix_scrape_runs_source_started_at",
+            "source",
+            sa.text("started_at DESC"),
+        ),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=_pk_uuid_col())
     source: str = Field(sa_column=sa.Column(sa.Text, nullable=False))

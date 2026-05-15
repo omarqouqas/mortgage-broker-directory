@@ -3,9 +3,10 @@
 Engine is cached on first access; tests that need isolation can call
 `reset_engine()` between cases.
 """
+
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
@@ -54,6 +55,6 @@ async def reset_engine() -> None:
 
 
 @asynccontextmanager
-async def get_session() -> AsyncIterator[AsyncSession]:
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with get_session_factory()() as session:
         yield session

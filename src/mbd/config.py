@@ -2,8 +2,9 @@
 
 Reads from `.env.local` only (NOT `.env`). The DB URL is validated to point at
 a local host; cloud Supabase URLs are rejected to prevent accidents during the
-Steps 1–3 build (see docs/decisions/0001-initial-scope-clarifications.md).
+Steps 1-3 build (see docs/decisions/0001-initial-scope-clarifications.md).
 """
+
 from __future__ import annotations
 
 from functools import lru_cache
