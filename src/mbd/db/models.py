@@ -191,7 +191,7 @@ class ScrapeRun(SQLModel, table=True):
     __tablename__: ClassVar[str] = "scrape_runs"  # pyright: ignore[reportIncompatibleVariableOverride]  # SQLModel parent declares this as declared_attr[Unknown]; concrete str override is intentional
     __table_args__ = (
         sa.Index(
-            "ix_scrape_runs_source_started_at",
+            "ix_scrape_runs_source_started_at_desc",
             "source",
             sa.text("started_at DESC"),
         ),
