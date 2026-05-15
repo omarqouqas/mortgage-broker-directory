@@ -27,12 +27,12 @@ Built by one person (me) in evenings/weekends.
 
 ```bash
 uv sync                              # install deps from lockfile
-uv run mbd scrape --province ontario # run a provincial scraper
+uv run mbd scrape --province ontario # run a provincial ingester (scraper, CSV importer, or API client — see ADR 0004)
 uv run mbd clean                     # run the cleaning pass
 uv run mbd verify --stale-days 30    # verify websites older than 30 days
 uv run mbd enrich --all              # Step 4 specialty enrichment (costs money)
 uv run pytest                        # run all tests
-uv run pytest -k fsra                # run scraper tests for FSRA only
+uv run pytest -k fsra                # run ingester tests for FSRA only
 uv run ruff check .                  # lint
 uv run ruff format .                 # format
 uv run pyright                       # type check
@@ -46,10 +46,10 @@ uv run alembic upgrade head          # apply migrations
 - **Pydantic v2 everywhere.** All scraper outputs, config, classifier I/O are Pydantic models. No raw dicts crossing module boundaries.
 - **SQLModel for persistence** — one class definition serves both validation and ORM. No separate Pydantic + SQLAlchemy classes.
 - **Strict typing.** `pyright` strict mode passes. No `Any` unless justified in a comment.
-- **Structured logging.** `structlog.get_logger()`, never `print()`. Every scraper logs run-id, province, record count.
+- **Structured logging.** `structlog.get_logger()`, never `print()`. Every ingester logs run-id, province, record count.
 - **Pure functions where possible.** Side effects (DB writes, network calls) at the edges of modules, not buried inside transformation functions.
 - **No magic.** Explicit > implicit. No metaclass tricks, no decorators that hide control flow.
-- **Module structure:** scrapers go in `src/mbd/scrapers/{province}.py`, each implementing the `BaseScraper` ABC defined in `scrapers/base.py`. Same pattern for `enrichment/`, `cleaning/`, `verification/`.
+- **Module structure:** provincial **data ingesters** go in `src/mbd/ingesters/{province}.py`. Each implements whichever ABC fits its access category — `BaseScraper` for HTML scraping, `BaseCSVImporter` for open-data downloads, `BaseAPIClient` for registries with documented APIs — all declared in `src/mbd/ingesters/base.py`. Same module-per-task pattern applies to `enrichment/`, `cleaning/`, `verification/`. (Not all sources are scraped — see ADR 0004.)
 
 ## Data conventions
 
@@ -61,13 +61,14 @@ uv run alembic upgrade head          # apply migrations
 - **Source URLs** stored on every record — every field traces back to where it came from.
 - **Soft-delete via `is_active`,** never hard-delete records that have been public.
 
-## Scraping rules (compliance)
+## Data access rules (compliance)
 
-- Honor `robots.txt` always. Check before adding any new domain.
+- **Honor `robots.txt` always.** Check before adding any new domain. **If a regulator blocks scraping via robots.txt, do not work around it** — pursue open-data release / API access / direct contact / FOI instead (see ADR 0004 for the FSRA precedent).
 - User-agent must identify the project + a contact email.
 - Default rate limit: 1 req/sec/domain. Slower if the regulator's terms specify.
 - No authenticated routes. No CAPTCHA solving. No scraping behind login walls.
-- Each province's compliance notes live in `docs/compliance/{province}.md` — read before writing the scraper.
+- For open-data CSV / API access, store the source URL + retrieval timestamp on every record, same as scraped data — provenance is non-negotiable regardless of ingest mechanism.
+- Each province's compliance notes live in `docs/compliance/{province}.md` — read before writing the ingester.
 
 ## What Claude Code should NOT do without asking
 
@@ -79,9 +80,10 @@ uv run alembic upgrade head          # apply migrations
 
 ## Reference docs (read on demand, not auto-loaded)
 
-- `docs/strategy/01-steps-1-3-scrape-clean-verify.md` — full Steps 1–3 build plan
+- `docs/strategy/01-steps-1-3-scrape-clean-verify.md` — full Steps 1–3 build plan (note: the "scrape every province" framing is superseded by ADR 0004)
 - `docs/strategy/02-step-4-specialty-enrichment.md` — full Step 4 plan (don't read until Steps 1–3 are shipped)
 - `docs/compliance/{province}.md` — regulator-specific compliance notes
+- `docs/decisions/` — accepted ADRs; ADR 0004 in particular changes ingest sequencing
 
 ## Out of scope (for now)
 
